@@ -181,7 +181,7 @@
   .abc{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;}
   .abc .h{background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;padding:7px;text-align:center;border-right:1px solid var(--line);}
   .abc .h:last-child{border-right:0;}
-  .abc .c{min-height:270px;border-right:1px solid var(--line);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 28px,var(--line) 28px,var(--line) 29px);}
+  .abc .c{min-height:150px;border-right:1px solid var(--line);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 28px,var(--line) 28px,var(--line) 29px);}
   .abc .c:last-child{border-right:0;}
 
   /* 그래프 영역 */
@@ -195,6 +195,8 @@
   .grid-area .xaxis{right:8px;bottom:6px;}
 
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  .divider{height:0;border-top:2px dashed var(--line-strong);margin:22px 0 4px;position:relative;}
+  .divider::after{content:"행동관찰";position:absolute;top:-10px;left:0;background:var(--paper);padding:0 10px 0 0;font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.5px;}
 
   /* 페이지 인디케이터 */
   /* 페이지 인디케이터 (미사용) */
@@ -226,9 +228,8 @@
   <div class="main">
   <div class="toolbar">
     <div class="seg" id="typeSeg">
-      <button data-type="behavior" class="active">행동관찰</button>
+      <button data-type="daily" class="active">업무·행동관찰</button>
       <button data-type="lesson">수업·지도</button>
-      <button data-type="work">업무</button>
     </div>
 
     <div class="tools">
@@ -299,12 +300,38 @@ function scaleRow(label){
 }
 
 const templates = {
-  behavior: ()=>`
+  daily: ()=>`
     <div class="jhead">
-      <h1><small>SPECIAL EDUCATION</small>행동관찰 일지</h1>
+      <h1><small>WORK & BEHAVIOR</small>업무 · 행동관찰 일지</h1>
       ${metaBlock()}
     </div>
-    <div style="display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:8px">
+
+    <!-- ===== 업무 (위) ===== -->
+    <div class="sec" style="margin-top:10px">
+      <h2>오늘 할 일</h2>
+      ${checkRows(["","","",""])}
+    </div>
+
+    <div class="sec">
+      <h2>업무 기록 · 협의 내용</h2>
+      <div class="lines" style="min-height:102px"></div>
+    </div>
+
+    <div class="sec">
+      <h2>연락 · 전달 사항</h2>
+      <div style="font-size:11px;color:var(--muted);margin:-2px 0 6px">보호자 / 지원사 / 동료 · 관리자</div>
+      <div class="lines" style="min-height:68px"></div>
+    </div>
+
+    <div class="sec">
+      <h2>오늘의 회고</h2>
+      <div class="lines" style="min-height:68px"></div>
+    </div>
+
+    <!-- ===== 행동관찰 (아래) ===== -->
+    <div class="divider"></div>
+
+    <div style="display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:4px">
       <label>학생 <input type="text" style="border:0;border-bottom:1px solid var(--line-strong);background:transparent;width:120px;font-family:inherit"></label>
       <label>표적행동 <input type="text" style="border:0;border-bottom:1px solid var(--line-strong);background:transparent;width:260px;font-family:inherit"></label>
     </div>
@@ -317,26 +344,20 @@ const templates = {
       </div>
     </div>
 
-    <div class="two-col" style="margin-top:16px">
-      <div class="sec" style="margin-top:0">
-        <h2>발생 빈도 그래프</h2>
-        <div class="grid-area"><span class="yaxis">횟수</span><span class="xaxis">시간/교시 →</span></div>
-      </div>
+    <div class="two-col" style="margin-top:14px">
       <div class="sec" style="margin-top:0">
         <h2>강도·기능 평가</h2>
         <table class="scale-table">
-          <tr><th></th><th>낮음 1 — 5 높음</th></tr>
           ${scaleRow("행동 강도")}
           ${scaleRow("회피 기능")}
           ${scaleRow("관심획득 기능")}
           ${scaleRow("물건획득 기능")}
         </table>
       </div>
-    </div>
-
-    <div class="sec">
-      <h2>중재·대응 메모</h2>
-      <div class="lines" style="min-height:310px"></div>
+      <div class="sec" style="margin-top:0">
+        <h2>중재·대응 메모</h2>
+        <div class="lines" style="min-height:150px"></div>
+      </div>
     </div>`,
 
   lesson: ()=>`
@@ -384,53 +405,11 @@ const templates = {
       </div>
     </div>`,
 
-  work: ()=>`
-    <div class="jhead">
-      <h1><small>WORK LOG</small>업무 일지</h1>
-      ${metaBlock()}
-    </div>
-
-    <div class="two-col" style="margin-top:14px">
-      <div class="sec" style="margin-top:0">
-        <h2>오늘 할 일</h2>
-        ${checkRows(["","","","",""])}
-      </div>
-      <div class="sec" style="margin-top:0">
-        <h2>우선순위 · 마감</h2>
-        ${checkRows(["","",""])}
-        <div style="height:8px"></div>
-        <table class="scale-table">
-          <tr><th></th><th>여유 1 — 5 긴급</th></tr>
-          ${scaleRow("긴급도")}
-        </table>
-      </div>
-    </div>
-
-    <div class="sec">
-      <h2>업무 기록 · 협의 내용</h2>
-      <div class="lines" style="min-height:200px"></div>
-    </div>
-
-    <div class="two-col" style="margin-top:16px">
-      <div class="sec" style="margin-top:0">
-        <h2>연락 · 전달 사항</h2>
-        <div style="font-size:11px;color:var(--muted);margin:-2px 0 6px">보호자 / 지원사 / 동료 · 관리자</div>
-        <div class="lines" style="min-height:120px"></div>
-      </div>
-      <div class="sec" style="margin-top:0">
-        <h2>내일 준비물 · 일정</h2>
-        ${checkRows(["","","",""])}
-      </div>
-    </div>
-
-    <div class="sec">
-      <h2>오늘의 회고</h2>
-      <div class="lines" style="min-height:150px"></div>
-    </div>`
+  work: ()=>templates.daily()   // 구버전 호환: 저장된 'work' 타입도 통합 양식으로
 };
 
 /* ---------------- 상태 ---------------- */
-let currentType = "behavior";
+let currentType = "daily";
 let pen = {color:"#1f2933", size:2.8, erase:false, tool:"pen"}; // tool: pen | highlighter
 
 // 각 일지 항목: {id, type, dateLabel, formHTML, strokes:[]}
@@ -452,11 +431,17 @@ function todayLabel(){
   const days=["일","월","화","수","목","금","토"];
   return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} (${days[d.getDay()]})`;
 }
-const TYPE_NAME={behavior:"행동관찰", lesson:"수업·지도", work:"업무"};
+const TYPE_NAME={daily:"업무·행동관찰", lesson:"수업·지도", behavior:"업무·행동관찰", work:"업무·행동관찰"};
 
 /* 새 일지 데이터 생성 */
 function makeEntry(type){
-  return {id:uid(), type, dateLabel:todayLabel(), formHTML:null, strokes:[]};
+  return {id:uid(), type:normType(type), dateLabel:todayLabel(), formHTML:null, strokes:[]};
+}
+// 구버전 타입(behavior/work)을 통합 타입으로 정규화
+function normType(t){
+  if(t==="behavior"||t==="work") return "daily";
+  if(t==="daily"||t==="lesson") return t;
+  return "daily";
 }
 
 /* 폼 렌더 + 폼 상호작용 바인딩 */
@@ -830,7 +815,7 @@ function openEntry(id, forceTemplate){
 
 function newEntry(type){
   syncCurrent();
-  const en=makeEntry(type||currentType||"behavior");
+  const en=makeEntry(type||currentType||"daily");
   entries.unshift(en);          // 최신이 위로
   curId=en.id;
   currentType=en.type;
@@ -846,7 +831,7 @@ function deleteEntry(id){
   if(idx<0) return;
   entries.splice(idx,1);
   if(curId===id){
-    if(entries.length===0){ newEntry("behavior"); return; }
+    if(entries.length===0){ newEntry("daily"); return; }
     curId=entries[Math.min(idx,entries.length-1)].id;
     const en=curEntry();
     currentType=en.type;
@@ -1039,6 +1024,7 @@ try{
 }catch(_){ storageOK=false; }
 
 let saveTimer=null;
+let ready=false;   // 초기 복원 완료 여부
 function scheduleSave(){
   renderList(); // 잉크 표시 등 갱신
   if(saveTimer) clearTimeout(saveTimer);
@@ -1046,6 +1032,7 @@ function scheduleSave(){
 }
 
 function persist(){
+  if(!ready) return;   // 초기 복원이 끝나기 전엔 저장하지 않음 (덮어쓰기 방지)
   syncCurrent();
   const data={app:"handwriting-journal", version:2, curId, entries};
   if(storageOK){
@@ -1077,7 +1064,7 @@ function restore(){
     if(!data || !Array.isArray(data.entries) || data.entries.length===0) return false;
     entries=data.entries.map(e=>({
       id:e.id||uid(),
-      type:e.type||"behavior",
+      type:normType(e.type),
       dateLabel:e.dateLabel||todayLabel(),
       formHTML:e.formHTML||null,
       strokes:Array.isArray(e.strokes)?e.strokes:[]
@@ -1106,7 +1093,7 @@ function importBackup(obj){
     return;
   }
   const incoming=obj.entries.map(e=>({
-    id:e.id||uid(), type:e.type||"behavior", dateLabel:e.dateLabel||todayLabel(),
+    id:e.id||uid(), type:normType(e.type), dateLabel:e.dateLabel||todayLabel(),
     formHTML:e.formHTML||null, strokes:Array.isArray(e.strokes)?e.strokes:[]
   }));
   const merge = entries.length>0 && confirm("기존 일지에 백업 내용을 합칠까요?\n[확인] 합치기 · [취소] 백업으로 교체");
@@ -1158,8 +1145,10 @@ if(restore()){
   renderForm(en.formHTML || templates[en.type]());
   renderList();
   requestAnimationFrame(()=>{fitScale();fitCanvas();});
+  ready=true;
 } else {
-  newEntry("behavior");
+  ready=true;
+  newEntry("daily");
 }
 updatePreview();
 if(!storageOK){ flashStatus("⚠ 미리보기 모드 — 자동저장 안 됨"); }
