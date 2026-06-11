@@ -598,7 +598,8 @@ function strokePath(g, pts, widthAt){
   const n=pts.length;
   if(n===1){
     const x=pts[0].x*A4W, y=pts[0].y*A4H;
-    g.beginPath(); g.arc(x,y,Math.max(0.6,widthAt(pts[0],0)/2),0,Math.PI*2); g.fill();
+    g.fillStyle=g.strokeStyle;   // 점 하나도 현재 색으로 확실히 보이게
+    g.beginPath(); g.arc(x,y,Math.max(0.8,widthAt(pts[0],0)/2),0,Math.PI*2); g.fill();
     return;
   }
   if(n===2){
@@ -669,7 +670,7 @@ function drawStroke(st, g){
   g.restore();
 }
 
-let drawing=false, cur=null, lastT=0, lastPt=null;
+let drawing=false, cur=null, lastT=0, lastPt=null, activePointerId=null;
 function rel(e){
   const r=canvas.getBoundingClientRect();
   // 화면상 캔버스 박스 기준 정규화 → 줌/팬과 무관하게 정확
@@ -736,6 +737,8 @@ function onPointerUp(e){
     if(activeTouches.size<2) pinch=null;
     return;
   }
+  try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+  activePointerId=null;
   end();
 }
 
@@ -743,11 +746,15 @@ function start(e){
   if(page.dataset.mode!=="draw") return;
   const en=curEntry(); if(!en) return;
   e.preventDefault();
-  drawing=true;
+  // 직전 획이 아직 안 끝났으면 먼저 마무리 (빠른 연속 입력 대비)
+  if(drawing){ flushToCache(); drawing=false; cur=null; }
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  drawing=true; activePointerId=e.pointerId;
   const pt=rel(e);
   lastT=performance.now(); lastPt=pt;
   cur={color:pen.color,size:pen.size,erase:pen.erase,tool:pen.tool,pts:[pt]};
   en.strokes.push(cur);
+  requestPaint();   // 짧은 탭도 즉시 한 점 표시
 }
 function move(e){
   if(!drawing) return;
@@ -781,8 +788,10 @@ function end(){
 
 canvas.addEventListener("pointerdown",onPointerDown);
 canvas.addEventListener("pointermove",onPointerMove);
-window.addEventListener("pointerup",onPointerUp);
-window.addEventListener("pointercancel",onPointerUp);
+canvas.addEventListener("pointerup",onPointerUp);
+canvas.addEventListener("pointercancel",onPointerUp);
+// 캡처가 풀려도 안전하게 끝내도록 보조
+window.addEventListener("pointerup",(e)=>{ if(e.pointerType!=="touch" && drawing) onPointerUp(e); });
 // 트랙패드/마우스 휠 줌(데스크톱 편의)
 document.querySelector(".stage").addEventListener("wheel",(e)=>{
   if(!e.ctrlKey && !e.metaKey) return;  // 일반 스크롤은 통과
