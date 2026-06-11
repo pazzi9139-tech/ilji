@@ -2,7 +2,7 @@
 // 앱 코드를 캐시해 오프라인에서도 열리게 합니다.
 // (사용자가 쓴 일지 데이터는 localStorage에 저장되며 여기서 다루지 않습니다.)
 
-const CACHE = "journal-v1";
+const CACHE = "journal-v3";
 const ASSETS = [
   "./",
   "./index.html",
