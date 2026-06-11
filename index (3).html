@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>손필기 일지</title>
+
+<!-- PWA -->
+<meta name="theme-color" content="#2f6f6a">
+<link rel="manifest" href="manifest.json">
+<!-- iOS(사파리) 홈 화면 앱 전용 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="일지">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<script>
+  // service worker 등록 (오프라인 실행). https 또는 localhost에서만 동작.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(()=>{});
+    });
+  }
+</script>
+<style>
+  :root{
+    --ink:#1f2933;
+    --paper:#fbfaf6;
+    --line:#dfe3e8;
+    --line-strong:#c4ccd4;
+    --accent:#2f6f6a;
+    --accent-soft:#e3efee;
+    --muted:#6b7680;
+    --danger:#b3453c;
+    --shadow:0 2px 14px rgba(31,41,51,.08);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    background:#eef0ec;color:var(--ink);
+    overscroll-behavior:none;-webkit-user-select:none;user-select:none;
+  }
+  .app{display:flex;flex-direction:row;height:100vh;height:100dvh;}
+  /* 홈 화면 앱(standalone)에서 노치/홈바 안전영역 확보 */
+  @supports(padding:max(0px)){
+    .sidebar{padding-top:max(0px, env(safe-area-inset-top));}
+    .toolbar{padding-left:max(12px, env(safe-area-inset-left));}
+  }
+  .main{display:flex;flex-direction:column;flex:1;min-width:0;}
+
+  /* ---- 사이드바(일지 목록) ---- */
+  .sidebar{width:248px;flex-shrink:0;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%;}
+  .sidebar.hidden{display:none;}
+  .sb-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;}
+  .sb-title{font-size:16px;font-weight:800;letter-spacing:-.3px;}
+  .sb-collapse,.sb-expand{border:1px solid var(--line);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;}
+  .sb-expand{position:absolute;top:14px;left:10px;z-index:30;}
+  .sb-new{margin:4px 14px 10px;padding:10px;border:1px dashed var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;}
+  .sb-list{flex:1;overflow-y:auto;padding:0 10px 10px;}
+  .entry{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;cursor:pointer;border:1px solid transparent;margin-bottom:6px;position:relative;}
+  .entry:hover{background:#f4f6f4;}
+  .entry.active{background:var(--accent-soft);border-color:var(--accent);}
+  .entry .e-date{font-size:14px;font-weight:700;color:var(--ink);}
+  .entry .e-type{font-size:11px;color:var(--muted);}
+  .entry .e-badge{position:absolute;right:10px;top:11px;font-size:10px;padding:2px 7px;border-radius:20px;background:#eef0ec;color:var(--muted);font-weight:700;}
+  .entry .e-del{position:absolute;right:8px;bottom:8px;border:0;background:transparent;color:var(--danger);font-size:12px;cursor:pointer;opacity:0;}
+  .entry:hover .e-del{opacity:.7;}
+  .sb-empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 12px;line-height:1.6;}
+  .sb-foot{border-top:1px solid var(--line);padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .sb-io{flex:1;min-width:96px;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);}
+  .sb-status{width:100%;font-size:11px;color:var(--muted);text-align:center;min-height:14px;}
+
+  /* ---- 상단 툴바 ---- */
+  .toolbar{
+    display:flex;align-items:center;gap:10px;padding:8px 12px;
+    background:#fff;border-bottom:1px solid var(--line);box-shadow:var(--shadow);
+    flex-wrap:wrap;z-index:20;
+  }
+  .seg{display:flex;background:#eef0ec;border-radius:10px;padding:3px;gap:2px;}
+  .seg button{
+    border:0;background:transparent;padding:8px 14px;border-radius:8px;
+    font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;
+  }
+  .seg button.active{background:#fff;color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.08);}
+
+  .tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .tbtn{
+    border:1px solid var(--line);background:#fff;border-radius:10px;
+    width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:18px;color:var(--ink);transition:.12s;
+  }
+  .tbtn.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
+  .tbtn.wide{width:auto;padding:0 14px;font-size:14px;font-weight:600;gap:6px;}
+  .tbtn.danger.active,.tbtn.danger{color:var(--danger);}
+  .swatch{width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer;}
+  .swatch.active{box-shadow:0 0 0 2px var(--accent);transform:scale(1.08);}
+  .sizes{display:flex;gap:4px;align-items:center;}
+  .sizedot{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;}
+  .sizedot.active{border-color:var(--accent);background:var(--accent-soft);}
+  .sizedot i{display:block;border-radius:50%;background:var(--ink);}
+  /* 굵기 슬라이더 */
+  .size-ctl{display:flex;align-items:center;gap:8px;padding:0 4px;}
+  .size-preview{width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .size-preview i{display:block;border-radius:50%;background:var(--ink);width:8px;height:8px;}
+  #sizeSlider{width:108px;accent-color:var(--accent);cursor:pointer;}
+  .spacer{flex:1;}
+  .palm-note{font-size:12px;color:var(--muted);}
+
+  /* ---- 페이지 영역 ---- */
+  .stage{flex:1;overflow:auto;display:flex;justify-content:flex-start;flex-direction:column;align-items:center;padding:18px;}
+  .page-wrap{transform-origin:top center;}
+  .page{
+    position:relative;width:794px;height:1123px;background:var(--paper);
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;flex-shrink:0;
+  }
+  .page-form{position:relative;z-index:1;padding:26px 30px 36px;pointer-events:none;}
+  .page-form *{pointer-events:none;}
+  /* 입력 가능한 폼 요소만 다시 활성화 */
+  .page-form input,.page-form .chk,.page-form .scale span{pointer-events:auto;}
+
+  canvas.ink{position:absolute;inset:0;width:100%;height:100%;z-index:5;touch-action:none;}
+  /* 필기 모드일 때만 캔버스가 입력을 먹음 */
+  .page[data-mode="draw"] canvas.ink{pointer-events:auto;}
+  .page[data-mode="form"] canvas.ink{pointer-events:none;}
+
+  /* 일지 공통 헤더 */
+  .jhead{display:flex;align-items:flex-end;gap:16px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:6px;}
+  .jhead h1{margin:0;font-size:22px;letter-spacing:-.4px;}
+  .jhead h1 small{display:block;font-size:12px;font-weight:600;color:var(--accent);letter-spacing:.5px;margin-bottom:2px;}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;font-size:13px;color:var(--muted);}
+  .meta label{display:flex;align-items:center;gap:5px;}
+  .meta input{border:0;border-bottom:1px solid var(--line-strong);background:transparent;font-size:13px;width:88px;padding:2px 2px;color:var(--ink);font-family:inherit;}
+  .meta input.wide{width:120px;}
+  .weather{display:flex;gap:4px;}
+  .weather span{font-size:18px;opacity:.35;cursor:pointer;transition:.1s;}
+  .weather span.on{opacity:1;transform:scale(1.15);}
+
+  .sec{margin-top:16px;}
+  .sec h2{font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.4px;margin:0 0 7px;display:flex;align-items:center;gap:7px;}
+  .sec h2::before{content:"";width:4px;height:14px;background:var(--accent);border-radius:2px;}
+
+  /* 줄칸 */
+  .lines{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 33px,var(--line) 33px,var(--line) 34px);}
+  .lines.tall{min-height:170px;}
+  .lines.short{min-height:104px;}
+  .lines.full{min-height:300px;}
+
+  /* 체크리스트 */
+  .check-row{display:flex;align-items:center;gap:10px;height:34px;border-bottom:1px solid var(--line);font-size:14px;}
+  .chk{width:20px;height:20px;border:2px solid var(--line-strong);border-radius:5px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;}
+  .chk.on{background:var(--accent);border-color:var(--accent);}
+  .chk.on::after{content:"✓";}
+  .check-row .lbl{flex:1;}
+  .check-row input.lbl{border:0;background:transparent;font-size:14px;font-family:inherit;color:var(--ink);width:100%;}
+
+  /* 교시 표 (수업일지) */
+  .period-table{width:100%;border-collapse:collapse;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;}
+  .period-table th{background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;padding:8px 6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line-strong);}
+  .period-table th:last-child{border-right:0;}
+  .period-table td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;}
+  .period-table td:last-child{border-right:0;}
+  .period-table tr:last-child td{border-bottom:0;}
+  .period-table .pnum{text-align:center;font-weight:700;color:var(--accent);font-size:14px;background:#f4f6f4;vertical-align:middle;}
+  .period-table .pcell{height:96px;}
+  .period-table .pcell.sm{background-image:none;}
+
+  /* 평가 척도 */
+  .scale-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .scale-table th{font-size:11px;color:var(--muted);font-weight:600;padding:0 4px 6px;text-align:center;}
+  .scale-table td{border-bottom:1px solid var(--line);padding:7px 4px;}
+  .scale-table td.item{text-align:left;}
+  .scale-table input.item{border:0;background:transparent;font-size:13px;width:100%;font-family:inherit;}
+  .scale{display:flex;gap:6px;justify-content:center;}
+  .scale span{width:26px;height:26px;border:1.5px solid var(--line-strong);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;color:var(--muted);}
+  .scale span.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;}
+
+  /* ABC 표 */
+  .abc{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;}
+  .abc .h{background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;padding:7px;text-align:center;border-right:1px solid var(--line);}
+  .abc .h:last-child{border-right:0;}
+  .abc .c{min-height:270px;border-right:1px solid var(--line);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 28px,var(--line) 28px,var(--line) 29px);}
+  .abc .c:last-child{border-right:0;}
+
+  /* 그래프 영역 */
+  .grid-area{position:relative;height:180px;border:1px solid var(--line-strong);border-radius:8px;
+    background-image:
+      repeating-linear-gradient(to right,transparent 0,transparent 23px,var(--line) 23px,var(--line) 24px),
+      repeating-linear-gradient(to bottom,transparent 0,transparent 23px,var(--line) 23px,var(--line) 24px);
+    background-color:#fff;}
+  .grid-area .yaxis,.grid-area .xaxis{position:absolute;font-size:11px;color:var(--muted);}
+  .grid-area .yaxis{left:6px;top:6px;}
+  .grid-area .xaxis{right:8px;bottom:6px;}
+
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+
+  /* 페이지 인디케이터 */
+  /* 페이지 인디케이터 (미사용) */
+
+  @media(max-width:840px){
+    .palm-note{display:none;}
+    .meta input{width:70px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <span class="sb-title">일지</span>
+      <button class="sb-collapse" id="sbCollapse" title="목록 접기">‹</button>
+    </div>
+    <button class="sb-new" id="newEntry">＋ 새 일지</button>
+    <div class="sb-list" id="entryList"></div>
+    <div class="sb-foot">
+      <button class="sb-io" id="openWork" title="백업 파일 열기">📂 불러오기</button>
+      <button class="sb-io" id="saveWork" title="전체 백업 내보내기">💾 백업</button>
+      <input type="file" id="openFile" accept=".json,application/json" style="display:none">
+      <div class="sb-status" id="saveStatus"></div>
+    </div>
+  </aside>
+  <button class="sb-expand" id="sbExpand" title="목록 펼치기" style="display:none">›</button>
+
+  <div class="main">
+  <div class="toolbar">
+    <div class="seg" id="typeSeg">
+      <button data-type="behavior" class="active">행동관찰</button>
+      <button data-type="lesson">수업·지도</button>
+      <button data-type="work">업무</button>
+    </div>
+
+    <div class="tools">
+      <button class="tbtn wide active" id="penMode" title="필기">✏️ 펜</button>
+      <button class="tbtn wide" id="hlMode" title="형광펜">🖍 형광펜</button>
+      <button class="tbtn wide" id="formMode" title="입력칸 편집">⌨️ 입력</button>
+      <span style="width:1px;height:28px;background:var(--line);"></span>
+
+      <div class="swatches" style="display:flex;gap:6px;">
+        <span class="swatch active" data-color="#1f2933" style="background:#1f2933"></span>
+        <span class="swatch" data-color="#2f6f6a" style="background:#2f6f6a"></span>
+        <span class="swatch" data-color="#b3453c" style="background:#b3453c"></span>
+        <span class="swatch" data-color="#2456a6" style="background:#2456a6"></span>
+        <span class="swatch" data-color="#d98c1f" style="background:#d98c1f"></span>
+        <span class="swatch" data-color="#f2e34c" style="background:#f2e34c" title="형광 노랑"></span>
+        <span class="swatch" data-color="#9be36b" style="background:#9be36b" title="형광 연두"></span>
+        <span class="swatch" data-color="#7bd5f0" style="background:#7bd5f0" title="형광 하늘"></span>
+        <span class="swatch" data-color="#f5a3d0" style="background:#f5a3d0" title="형광 분홍"></span>
+      </div>
+
+      <div class="size-ctl">
+        <span class="size-preview" id="sizePreview"><i></i></span>
+        <input type="range" id="sizeSlider" min="1" max="22" step="0.5" value="2.8">
+      </div>
+
+      <button class="tbtn" id="eraser" title="지우개">🧽</button>
+      <button class="tbtn" id="undo" title="실행취소">↶</button>
+      <button class="tbtn danger" id="clearPage" title="이 일지 필기 지우기">🗑</button>
+    </div>
+
+    <div class="spacer"></div>
+    <span class="palm-note">손가락·펜 모두 필기됩니다</span>
+    <button class="tbtn wide" id="savePng" title="현재 일지 이미지로 저장">📷 이미지</button>
+  </div>
+
+  <div class="stage">
+    <div class="page-wrap" id="pageWrap">
+      <div class="page" id="page" data-mode="draw">
+        <div class="page-form" id="form"></div>
+        <canvas class="ink" id="canvas"></canvas>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- 일지 양식 템플릿 ---------------- */
+const weatherIcons = ["☀️","⛅","☁️","🌧️","❄️"];
+
+function metaBlock(){
+  return `
+  <div class="meta">
+    <label>날짜 <input type="text" placeholder="2026.__.__"></label>
+    <label>요일 <input type="text" style="width:46px" placeholder="요일"></label>
+    <label>날씨 <span class="weather">${weatherIcons.map(w=>`<span>${w}</span>`).join("")}</span></label>
+  </div>`;
+}
+
+function checkRows(items){
+  return items.map(t=>`<div class="check-row"><span class="chk"></span><input class="lbl" value="${t}"></div>`).join("");
+}
+function scaleRow(label){
+  return `<tr><td class="item"><input class="item" value="${label}"></td>
+    <td><div class="scale">${[1,2,3,4,5].map(n=>`<span>${n}</span>`).join("")}</div></td></tr>`;
+}
+
+const templates = {
+  behavior: ()=>`
+    <div class="jhead">
+      <h1><small>SPECIAL EDUCATION</small>행동관찰 일지</h1>
+      ${metaBlock()}
+    </div>
+    <div style="display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:8px">
+      <label>학생 <input type="text" style="border:0;border-bottom:1px solid var(--line-strong);background:transparent;width:120px;font-family:inherit"></label>
+      <label>표적행동 <input type="text" style="border:0;border-bottom:1px solid var(--line-strong);background:transparent;width:260px;font-family:inherit"></label>
+    </div>
+
+    <div class="sec">
+      <h2>ABC 관찰 기록</h2>
+      <div class="abc">
+        <div class="h">선행사건 (A)</div><div class="h">행동 (B)</div><div class="h">후속결과 (C)</div>
+        <div class="c"></div><div class="c"></div><div class="c"></div>
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-top:16px">
+      <div class="sec" style="margin-top:0">
+        <h2>발생 빈도 그래프</h2>
+        <div class="grid-area"><span class="yaxis">횟수</span><span class="xaxis">시간/교시 →</span></div>
+      </div>
+      <div class="sec" style="margin-top:0">
+        <h2>강도·기능 평가</h2>
+        <table class="scale-table">
+          <tr><th></th><th>낮음 1 — 5 높음</th></tr>
+          ${scaleRow("행동 강도")}
+          ${scaleRow("회피 기능")}
+          ${scaleRow("관심획득 기능")}
+          ${scaleRow("물건획득 기능")}
+        </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>중재·대응 메모</h2>
+      <div class="lines" style="min-height:310px"></div>
+    </div>`,
+
+  lesson: ()=>`
+    <div class="jhead">
+      <h1><small>LESSON LOG</small>수업 일지</h1>
+      <div class="meta">
+        <label><input type="text" style="width:54px" placeholder="2026">년</label>
+        <label><input type="text" style="width:34px" placeholder="__">월</label>
+        <label><input type="text" style="width:34px" placeholder="__">일</label>
+        <label><input type="text" style="width:40px" placeholder="요일">요일</label>
+      </div>
+    </div>
+
+    <div class="sec" style="margin-top:12px">
+      <h2>출결 특이사항</h2>
+      <div class="lines" style="min-height:52px"></div>
+    </div>
+
+    <div class="sec">
+      <table class="period-table">
+        <colgroup><col style="width:34px"><col style="width:130px"><col><col></colgroup>
+        <thead>
+          <tr><th></th><th>교과 / 학생</th><th>수업 계획</th><th>수업 후기</th></tr>
+        </thead>
+        <tbody>
+          ${[1,2,3,4,5,6].map(n=>`
+          <tr>
+            <td class="pnum">${n}</td>
+            <td class="pcell sm"></td>
+            <td class="pcell"></td>
+            <td class="pcell"></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="two-col" style="margin-top:16px">
+      <div class="sec" style="margin-top:0">
+        <h2>TO DO</h2>
+        ${checkRows(["","","","",""])}
+      </div>
+      <div class="sec" style="margin-top:0">
+        <h2>MEMO</h2>
+        <div class="lines" style="min-height:198px"></div>
+      </div>
+    </div>`,
+
+  work: ()=>`
+    <div class="jhead">
+      <h1><small>WORK LOG</small>업무 일지</h1>
+      ${metaBlock()}
+    </div>
+
+    <div class="two-col" style="margin-top:14px">
+      <div class="sec" style="margin-top:0">
+        <h2>오늘 할 일</h2>
+        ${checkRows(["","","","",""])}
+      </div>
+      <div class="sec" style="margin-top:0">
+        <h2>우선순위 · 마감</h2>
+        ${checkRows(["","",""])}
+        <div style="height:8px"></div>
+        <table class="scale-table">
+          <tr><th></th><th>여유 1 — 5 긴급</th></tr>
+          ${scaleRow("긴급도")}
+        </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>업무 기록 · 협의 내용</h2>
+      <div class="lines" style="min-height:200px"></div>
+    </div>
+
+    <div class="two-col" style="margin-top:16px">
+      <div class="sec" style="margin-top:0">
+        <h2>연락 · 전달 사항</h2>
+        <div style="font-size:11px;color:var(--muted);margin:-2px 0 6px">보호자 / 지원사 / 동료 · 관리자</div>
+        <div class="lines" style="min-height:120px"></div>
+      </div>
+      <div class="sec" style="margin-top:0">
+        <h2>내일 준비물 · 일정</h2>
+        ${checkRows(["","","",""])}
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>오늘의 회고</h2>
+      <div class="lines" style="min-height:150px"></div>
+    </div>`
+};
+
+/* ---------------- 상태 ---------------- */
+let currentType = "behavior";
+let pen = {color:"#1f2933", size:2.8, erase:false, tool:"pen"}; // tool: pen | highlighter
+
+// 각 일지 항목: {id, type, dateLabel, formHTML, strokes:[]}
+let entries = [];
+let curId = null;          // 현재 열린 일지 id
+const STORE_KEY = "handwriting_journal_entries_v1";
+
+const page = document.getElementById("page");
+const form = document.getElementById("form");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function uid(){ return "e"+Date.now()+Math.random().toString(36).slice(2,6); }
+function curEntry(){ return entries.find(e=>e.id===curId); }
+
+/* 오늘 날짜 라벨 */
+function todayLabel(){
+  const d=new Date();
+  const days=["일","월","화","수","목","금","토"];
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} (${days[d.getDay()]})`;
+}
+const TYPE_NAME={behavior:"행동관찰", lesson:"수업·지도", work:"업무"};
+
+/* 새 일지 데이터 생성 */
+function makeEntry(type){
+  return {id:uid(), type, dateLabel:todayLabel(), formHTML:null, strokes:[]};
+}
+
+/* 폼 렌더 + 폼 상호작용 바인딩 */
+function renderForm(html){
+  form.innerHTML = html;
+  bindFormInteractions();
+}
+
+function bindFormInteractions(){
+  form.querySelectorAll(".chk").forEach(el=>{
+    el.onclick = ()=>{ el.classList.toggle("on"); scheduleSave(); };
+  });
+  form.querySelectorAll(".weather").forEach(w=>{
+    w.querySelectorAll("span").forEach(s=>{
+      s.onclick = ()=>{ w.querySelectorAll("span").forEach(x=>x.classList.remove("on")); s.classList.add("on"); scheduleSave(); };
+    });
+  });
+  form.querySelectorAll(".scale").forEach(sc=>{
+    sc.querySelectorAll("span").forEach(s=>{
+      s.onclick = ()=>{ sc.querySelectorAll("span").forEach(x=>x.classList.remove("on")); s.classList.add("on"); scheduleSave(); };
+    });
+  });
+  form.querySelectorAll("input").forEach(i=>{
+    i.oninput = ()=>scheduleSave();
+  });
+}
+
+/* 폼 상태(체크/척도/입력값) 보존을 위해 HTML 저장 */
+function captureForm(){
+  // input 값 attribute로 반영
+  form.querySelectorAll("input").forEach(i=>i.setAttribute("value", i.value));
+  return form.innerHTML;
+}
+
+/* ---------------- 캔버스 ---------------- */
+const A4W=794, A4H=1123;
+let scale=1;
+
+function fitScale(){
+  const stage=document.querySelector(".stage");
+  const wrap=document.getElementById("pageWrap");
+  const avail=stage.clientWidth-36;           // 좌우 패딩
+  scale=Math.min(1, avail/A4W);
+  wrap.style.transform=`scale(${scale})`;
+  // 스케일 후 실제 차지 높이만큼 wrap 아래 여백 확보(스크롤용)
+  wrap.style.marginBottom=`${A4H*scale - A4H + 18}px`;
+}
+
+function fitCanvas(){
+  const dpr=window.devicePixelRatio||1;
+  // 캔버스는 A4 논리 좌표 기준으로 그림 (스케일은 CSS transform이 처리)
+  canvas.width=A4W*dpr;
+  canvas.height=A4H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  redraw();
+}
+
+function redraw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const en=curEntry(); if(!en) return;
+  en.strokes.forEach(st=>drawStroke(st));
+}
+
+function drawStroke(st){
+  if(st.pts.length<1) return;
+  ctx.save();
+  if(st.erase){
+    ctx.globalCompositeOperation="destination-out"; ctx.lineWidth=st.size*7;
+    ctx.lineCap="round"; ctx.lineJoin="round";
+  } else if(st.tool==="highlighter"){
+    ctx.globalCompositeOperation="multiply";   // 글씨가 비쳐 보이는 형광 효과
+    ctx.globalAlpha=0.4;
+    ctx.strokeStyle=st.color;
+    ctx.lineWidth=st.size;
+    ctx.lineCap="square"; ctx.lineJoin="round";
+  } else {
+    ctx.globalCompositeOperation="source-over"; ctx.strokeStyle=st.color; ctx.lineWidth=st.size;
+    ctx.lineCap="round"; ctx.lineJoin="round";
+  }
+  ctx.beginPath();
+  st.pts.forEach((p,i)=>{
+    const x=p.x*A4W, y=p.y*A4H;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+let drawing=false, cur=null;
+function rel(e){
+  const r=canvas.getBoundingClientRect();
+  const t=e.touches?e.touches[0]:e;
+  return {x:(t.clientX-r.left)/r.width, y:(t.clientY-r.top)/r.height};
+}
+function start(e){
+  if(page.dataset.mode!=="draw") return;
+  const en=curEntry(); if(!en) return;
+  e.preventDefault();
+  drawing=true;
+  cur={color:pen.color,size:pen.size,erase:pen.erase,tool:pen.tool,pts:[rel(e)]};
+  en.strokes.push(cur);
+}
+function move(e){
+  if(!drawing) return;
+  e.preventDefault();
+  cur.pts.push(rel(e));
+  redraw();
+}
+function end(){ if(drawing){ drawing=false; cur=null; scheduleSave(); } }
+
+canvas.addEventListener("pointerdown",start);
+canvas.addEventListener("pointermove",move);
+window.addEventListener("pointerup",end);
+canvas.addEventListener("touchstart",start,{passive:false});
+canvas.addEventListener("touchmove",move,{passive:false});
+window.addEventListener("touchend",end);
+
+/* ---------------- 일지 열기 / 추가 / 목록 ---------------- */
+
+// 현재 화면의 폼 상태를 현재 entry에 반영
+function syncCurrent(){
+  const en=curEntry();
+  if(en) en.formHTML = captureForm();
+}
+
+function openEntry(id, forceTemplate){
+  if(curId && curId!==id && !forceTemplate) syncCurrent();
+  curId=id;
+  const en=curEntry(); if(!en) return;
+  if(forceTemplate) en.formHTML=null;
+  currentType=en.type;
+  document.querySelectorAll("#typeSeg button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentType));
+  renderForm(en.formHTML || templates[en.type]());
+  renderList();
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+}
+
+function newEntry(type){
+  syncCurrent();
+  const en=makeEntry(type||currentType||"behavior");
+  entries.unshift(en);          // 최신이 위로
+  curId=en.id;
+  currentType=en.type;
+  document.querySelectorAll("#typeSeg button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentType));
+  renderForm(templates[en.type]());
+  renderList();
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+  scheduleSave();
+}
+
+function deleteEntry(id){
+  const idx=entries.findIndex(e=>e.id===id);
+  if(idx<0) return;
+  entries.splice(idx,1);
+  if(curId===id){
+    if(entries.length===0){ newEntry("behavior"); return; }
+    curId=entries[Math.min(idx,entries.length-1)].id;
+    const en=curEntry();
+    currentType=en.type;
+    document.querySelectorAll("#typeSeg button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentType));
+    renderForm(en.formHTML || templates[en.type]());
+    requestAnimationFrame(()=>{fitScale();fitCanvas();});
+  }
+  renderList();
+  scheduleSave();
+}
+
+function renderList(){
+  const list=document.getElementById("entryList");
+  if(entries.length===0){
+    list.innerHTML=`<div class="sb-empty">아직 일지가 없습니다.<br>위 ＋ 새 일지로 시작하세요.</div>`;
+    return;
+  }
+  list.innerHTML=entries.map(e=>{
+    const ink=e.strokes&&e.strokes.length?"●":"";
+    return `<div class="entry${e.id===curId?" active":""}" data-id="${e.id}">
+      <span class="e-date">${e.dateLabel}</span>
+      <span class="e-type">${TYPE_NAME[e.type]||e.type} ${ink}</span>
+      <button class="e-del" data-del="${e.id}" title="삭제">삭제</button>
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".entry").forEach(el=>{
+    el.onclick=(ev)=>{
+      if(ev.target.dataset.del) return;
+      openEntry(el.dataset.id);
+    };
+  });
+  list.querySelectorAll(".e-del").forEach(b=>{
+    b.onclick=(ev)=>{
+      ev.stopPropagation();
+      if(confirm("이 일지를 삭제할까요? 되돌릴 수 없습니다.")) deleteEntry(b.dataset.del);
+    };
+  });
+}
+
+/* ---------------- 툴바 이벤트 ---------------- */
+document.querySelectorAll("#typeSeg button").forEach(b=>{
+  b.onclick=()=>{
+    const en=curEntry(); if(!en) return;
+    // 필기가 없으면 현재 일지의 양식만 교체, 있으면 새 일지로
+    if(en.strokes.length===0){
+      en.type=b.dataset.type;
+      openEntry(en.id, true);
+    } else {
+      newEntry(b.dataset.type);
+    }
+  };
+});
+
+/* 펜·형광펜 각각의 마지막 굵기/색 기억 */
+const lastSize={pen:2.8, highlighter:16};
+const lastColor={pen:"#1f2933", highlighter:"#f2e34c"};
+const slider=document.getElementById("sizeSlider");
+const sizePreview=document.getElementById("sizePreview").querySelector("i");
+
+function updatePreview(){
+  const d=Math.max(4,Math.min(28,pen.size));
+  sizePreview.style.width=d+"px";
+  sizePreview.style.height=d+"px";
+  sizePreview.style.opacity = pen.tool==="highlighter" ? .45 : 1;
+  sizePreview.style.background = pen.tool==="highlighter" ? pen.color : "var(--ink)";
+}
+
+function setActiveTool(name){ // pen | highlighter | erase | form
+  page.dataset.mode = (name==="form") ? "form" : "draw";
+  pen.erase = (name==="erase");
+  if(name==="pen"||name==="highlighter"){
+    pen.tool=name;
+    pen.size=lastSize[name];
+    pen.color=lastColor[name];
+    slider.value=pen.size;
+    document.querySelectorAll(".swatch").forEach(x=>x.classList.toggle("active",x.dataset.color===pen.color));
+  }
+  document.getElementById("penMode").classList.toggle("active",name==="pen");
+  document.getElementById("hlMode").classList.toggle("active",name==="highlighter");
+  document.getElementById("eraser").classList.toggle("active",name==="erase");
+  document.getElementById("formMode").classList.toggle("active",name==="form");
+  updatePreview();
+}
+
+document.getElementById("penMode").onclick=()=>setActiveTool("pen");
+document.getElementById("hlMode").onclick=()=>setActiveTool("highlighter");
+document.getElementById("formMode").onclick=()=>setActiveTool("form");
+document.getElementById("eraser").onclick=()=>{
+  setActiveTool(pen.erase ? pen.tool : "erase");
+};
+
+document.querySelectorAll(".swatch").forEach(s=>{
+  s.onclick=()=>{
+    pen.color=s.dataset.color;
+    if(!pen.erase) lastColor[pen.tool]=pen.color;
+    document.querySelectorAll(".swatch").forEach(x=>x.classList.remove("active"));
+    s.classList.add("active");
+    // 색 선택 시 그리기 모드로 (지우개였다면 직전 도구로 복귀)
+    if(pen.erase || page.dataset.mode==="form"){
+      pen.erase=false;
+      page.dataset.mode="draw";
+      document.getElementById("eraser").classList.remove("active");
+      document.getElementById("formMode").classList.remove("active");
+      document.getElementById(pen.tool==="highlighter"?"hlMode":"penMode").classList.add("active");
+    }
+    updatePreview();
+  };
+});
+
+slider.oninput=()=>{
+  pen.size=parseFloat(slider.value);
+  if(!pen.erase) lastSize[pen.tool]=pen.size;
+  updatePreview();
+};
+
+document.getElementById("undo").onclick=()=>{ const en=curEntry(); if(en){en.strokes.pop(); redraw(); renderList(); scheduleSave();} };
+document.getElementById("clearPage").onclick=()=>{
+  const en=curEntry(); if(!en) return;
+  if(confirm("이 일지의 필기를 모두 지울까요? (입력칸은 유지)")){
+    en.strokes=[]; redraw(); renderList(); scheduleSave();
+  }
+};
+
+document.getElementById("newEntry").onclick=()=>newEntry();
+
+/* 사이드바 접기/펼치기 */
+document.getElementById("sbCollapse").onclick=()=>{
+  document.getElementById("sidebar").classList.add("hidden");
+  document.getElementById("sbExpand").style.display="block";
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+};
+document.getElementById("sbExpand").onclick=()=>{
+  document.getElementById("sidebar").classList.remove("hidden");
+  document.getElementById("sbExpand").style.display="none";
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+};
+
+/* ---------------- PNG 저장 (양식+필기 합성) ---------------- */
+document.getElementById("savePng").onclick=async()=>{
+  const btn=document.getElementById("savePng");
+  btn.textContent="저장중…";
+  const dpr=2;
+  const out=document.createElement("canvas");
+  out.width=A4W*dpr; out.height=A4H*dpr;
+  const o=out.getContext("2d");
+  o.scale(dpr,dpr);
+  o.fillStyle="#fbfaf6"; o.fillRect(0,0,A4W,A4H);
+
+  // 1) 양식(HTML)을 SVG foreignObject로 래스터화
+  try{
+    const clone=form.cloneNode(true);
+    clone.querySelectorAll("input").forEach(i=>i.setAttribute("value",i.value));
+    const styleEl=document.querySelector("style").outerHTML;
+    const html=
+      `<div xmlns="http://www.w3.org/1999/xhtml" class="page-form" `+
+      `style="width:${A4W}px;background:#fbfaf6;">${clone.innerHTML}</div>`;
+    const svg=
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${A4W}" height="${A4H}">`+
+      `<foreignObject width="100%" height="100%">${styleEl}${html}</foreignObject></svg>`;
+    const img=new Image();
+    await new Promise((res,rej)=>{
+      img.onload=res; img.onerror=rej;
+      img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+    });
+    o.drawImage(img,0,0,A4W,A4H);
+  }catch(err){
+    console.warn("양식 래스터화 실패, 필기만 저장합니다",err);
+  }
+
+  // 2) 필기 레이어 합성
+  (curEntry()?curEntry().strokes:[]).forEach(st=>{
+    o.save();
+    if(st.erase){
+      o.globalCompositeOperation="destination-out";o.lineWidth=st.size*7;
+      o.lineCap="round";o.lineJoin="round";
+    } else if(st.tool==="highlighter"){
+      o.globalCompositeOperation="multiply";o.globalAlpha=0.4;
+      o.strokeStyle=st.color;o.lineWidth=st.size;
+      o.lineCap="square";o.lineJoin="round";
+    } else {
+      o.strokeStyle=st.color;o.lineWidth=st.size;
+      o.lineCap="round";o.lineJoin="round";
+    }
+    o.beginPath();
+    st.pts.forEach((p,i)=>{const x=p.x*A4W,y=p.y*A4H;i?o.lineTo(x,y):o.moveTo(x,y);});
+    o.stroke();o.restore();
+  });
+
+  const a=document.createElement("a");
+  const en=curEntry();
+  const safe=(en?en.dateLabel:"").replace(/[^0-9]/g,"").slice(0,8) || "page";
+  a.download=`일지_${currentType}_${safe}.png`;
+  a.href=out.toDataURL("image/png");
+  a.click();
+  btn.textContent="📷 이미지";
+};
+
+/* ---------------- 자동 저장 (localStorage) ---------------- */
+let storageOK=true;
+try{
+  const t="__t"; localStorage.setItem(t,"1"); localStorage.removeItem(t);
+}catch(_){ storageOK=false; }
+
+let saveTimer=null;
+function scheduleSave(){
+  renderList(); // 잉크 표시 등 갱신
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer=setTimeout(persist,400);
+}
+
+function persist(){
+  syncCurrent();
+  const data={app:"handwriting-journal", version:2, curId, entries};
+  if(storageOK){
+    try{
+      localStorage.setItem(STORE_KEY, JSON.stringify(data));
+      flashStatus("저장됨 · "+new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
+    }catch(err){
+      flashStatus("⚠ 저장 공간 부족 — 백업을 써주세요");
+    }
+  } else {
+    flashStatus("⚠ 미리보기 모드 — 자동저장 안 됨");
+  }
+}
+
+let statusTimer=null;
+function flashStatus(msg){
+  const el=document.getElementById("saveStatus");
+  el.textContent=msg;
+  if(statusTimer) clearTimeout(statusTimer);
+  statusTimer=setTimeout(()=>{ if(el.textContent===msg) el.textContent=""; },4000);
+}
+
+function restore(){
+  if(!storageOK) return false;
+  try{
+    const raw=localStorage.getItem(STORE_KEY);
+    if(!raw) return false;
+    const data=JSON.parse(raw);
+    if(!data || !Array.isArray(data.entries) || data.entries.length===0) return false;
+    entries=data.entries.map(e=>({
+      id:e.id||uid(),
+      type:e.type||"behavior",
+      dateLabel:e.dateLabel||todayLabel(),
+      formHTML:e.formHTML||null,
+      strokes:Array.isArray(e.strokes)?e.strokes:[]
+    }));
+    curId = data.curId && entries.some(e=>e.id===data.curId) ? data.curId : entries[0].id;
+    return true;
+  }catch(err){ console.warn("복원 실패",err); return false; }
+}
+
+/* ---------------- 전체 백업(.json) 내보내기 / 가져오기 ---------------- */
+function exportBackup(){
+  syncCurrent();
+  const data={app:"handwriting-journal", version:2, savedAt:new Date().toISOString(), curId, entries};
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.download=`일지백업_${new Date().toISOString().slice(0,10)}.json`;
+  a.href=url; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  flashStatus("백업 파일을 내려받았습니다");
+}
+
+function importBackup(obj){
+  if(!obj || obj.app!=="handwriting-journal" || !Array.isArray(obj.entries)){
+    alert("이 일지 앱에서 만든 백업 파일이 아닙니다.");
+    return;
+  }
+  const incoming=obj.entries.map(e=>({
+    id:e.id||uid(), type:e.type||"behavior", dateLabel:e.dateLabel||todayLabel(),
+    formHTML:e.formHTML||null, strokes:Array.isArray(e.strokes)?e.strokes:[]
+  }));
+  const merge = entries.length>0 && confirm("기존 일지에 백업 내용을 합칠까요?\n[확인] 합치기 · [취소] 백업으로 교체");
+  if(merge){
+    const have=new Set(entries.map(e=>e.id));
+    incoming.forEach(e=>{ if(!have.has(e.id)) entries.push(e); });
+  } else {
+    entries=incoming;
+  }
+  curId=entries[0].id;
+  const en=curEntry();
+  currentType=en.type;
+  document.querySelectorAll("#typeSeg button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentType));
+  renderForm(en.formHTML || templates[en.type]());
+  renderList();
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+  persist();
+}
+
+document.getElementById("saveWork").onclick=exportBackup;
+document.getElementById("openWork").onclick=()=>document.getElementById("openFile").click();
+document.getElementById("openFile").onchange=(e)=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{ importBackup(JSON.parse(reader.result)); }
+    catch(err){ alert("파일을 읽을 수 없습니다."); console.error(err); }
+  };
+  reader.readAsText(file);
+  e.target.value="";
+};
+
+window.addEventListener("resize",()=>requestAnimationFrame(()=>{fitScale();fitCanvas();}));
+
+/* 페이지를 떠나기 전 마지막 저장 시도 */
+window.addEventListener("beforeunload",(e)=>{
+  persist();
+  if(!storageOK && entries.some(en=>en.strokes&&en.strokes.length>0)){
+    e.preventDefault(); e.returnValue="";  // 미리보기 모드에서만 경고
+  }
+});
+
+/* ---------------- 초기화 ---------------- */
+if(restore()){
+  const en=curEntry();
+  currentType=en.type;
+  document.querySelectorAll("#typeSeg button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentType));
+  renderForm(en.formHTML || templates[en.type]());
+  renderList();
+  requestAnimationFrame(()=>{fitScale();fitCanvas();});
+} else {
+  newEntry("behavior");
+}
+updatePreview();
+if(!storageOK){ flashStatus("⚠ 미리보기 모드 — 자동저장 안 됨"); }
+</script>
+</body>
+</html>
